@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>폰 사용시간 트래커</title>
+  <style>
+    :root {
+      --bg: #0f1220;
+      --panel: #151a2d;
+      --muted: #8b91a7;
+      --text: #e7e9f5;
+      --accent: #8ab4ff;
+      --accent-2: #7cf1c8;
+      --danger: #ff6b6b;
+      --warn: #ffd166;
+      --ok: #95f29b;
+      --radius: 16px;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background: radial-gradient(1200px 800px at 80% -10%, #1b2143 0%, #0c0f1c 60%, #070910 100%); color:var(--text);
+      font-family: ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+      line-height:1.5;
+    }
+    header{
+      position:sticky; top:0; z-index:10; backdrop-filter: blur(8px);
+      background: linear-gradient(180deg, rgba(10,12,20,.85), rgba(10,12,20,.5));
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .wrap{max-width:1100px; margin:0 auto; padding:16px;}
+    .titlebar{display:flex; gap:12px; align-items:center; padding:10px 0;}
+    .app-icon{width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: var(--shadow)}
+    h1{font-size:20px; margin:0}
+    .muted{color:var(--muted);}
+
+    nav.tabs{display:flex; gap:8px; flex-wrap:wrap; padding:10px 0 14px}
+    .tab{padding:10px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.08); color:var(--muted); cursor:pointer; user-select:none}
+    .tab.active{background:linear-gradient(135deg,#1d2445,#151a2d); color:var(--text); border-color:rgba(255,255,255,.14)}
+
+    main{padding:16px 0 40px}
+    .grid{display:grid; gap:16px}
+    @media(min-width:860px){
+      .grid.cols-3{grid-template-columns:2fr 1fr; grid-auto-rows:min-content}
+      .span-2{grid-column:1 / span 2}
+    }
+    .card{background: linear-gradient(180deg, #12172b, #0e1326); border:1px solid rgba(255,255,255,.06); border-radius: var(--radius); box-shadow: var(--shadow);}
+    .card .head{padding:14px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,.06)}
+    .card .content{padding:14px 16px}
+    .kpi{display:flex; gap:18px; flex-wrap:wrap}
+    .kpi .item{background:#0b1022; border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:12px 14px; min-width:140px}
+    .k{font-size:13px; color:var(--muted)}
+    .v{font-size:22px; font-weight:700}
+
+    .row{display:flex; gap:10px; flex-wrap:wrap}
+    input, select, button, textarea{
+      background:#0b1022; border:1px solid rgba(255,255,255,.12); color:var(--text); border-radius:12px; padding:10px 12px; font-size:14px; outline:none;
+    }
+    button{cursor:pointer}
+    button.primary{background:linear-gradient(135deg,#28306a,#1a2050); border-color:rgba(255,255,255,.18)}
+    button.ghost{background:transparent}
+    button.warn{background:#3b2d06; border-color:#6b520c; color:#ffd166}
+    button.danger{background:#3a1a1a; border-color:#612a2a; color:#ff9b9b}
+    .hint{font-size:12px; color:var(--muted)}
+
+    /* Calendar */
+    .calendar{display:grid; grid-template-columns:repeat(7,1fr); gap:8px}
+    .cal-head{display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-bottom:8px}
+    .cal-head div{font-size:12px; color:var(--muted); text-align:center}
+    .day{border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:8px; min-height:72px; display:flex; flex-direction:column; justify-content:space-between; background:#0c1125; cursor:pointer}
+    .day .dno{font-size:12px; color:var(--muted)}
+    .day .mins{font-weight:700}
+    .day.none{opacity:.25; pointer-events:none}
+
+    canvas{width:100%; height:260px; display:block}
+    .apps-table{width:100%; border-collapse:collapse}
+    .apps-table th, .apps-table td{padding:10px; border-bottom:1px dashed rgba(255,255,255,.08); text-align:left}
+
+    .footer{padding:30px 0; color:var(--muted); font-size:12px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div class="titlebar">
+        <div class="app-icon"></div>
+        <div>
+          <h1>폰 사용시간 트래커</h1>
+          <div class="muted">로컬 저장 · 차트 · 캘린더 · 앱별</div>
+        </div>
+      </div>
+      <nav class="tabs">
+        <div class="tab active" data-page="dash">대시보드</div>
+        <div class="tab" data-page="calendar">캘린더</div>
+        <div class="tab" data-page="apps">앱별 관리</div>
+        <div class="tab" data-page="settings">설정 · 가져오기/내보내기</div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- DASHBOARD -->
+    <section id="page-dash" class="page">
+      <div class="grid cols-3">
+        <div class="card span-2">
+          <div class="head">
+            <div>
+              <strong>최근 14일 총 사용시간</strong>
+              <div class="hint">일간 추이 라인 차트</div>
+            </div>
+            <div class="row">
+              <input type="month" id="dashMonth" />
+              <button class="ghost" id="jumpToday">오늘로</button>
+            </div>
+          </div>
+          <div class="content">
+            <canvas id="lineChart" width="900" height="280"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <div class="head"><strong>요약</strong></div>
+          <div class="content">
+            <div class="kpi">
+              <div class="item">
+                <div class="k">오늘</div>
+                <div class="v" id="kToday">0분</div>
+              </div>
+              <div class="item">
+                <div class="k">7일 평균</div>
+                <div class="v" id="kAvg7">0분</div>
+              </div>
+              <div class="item">
+                <div class="k">30일 평균</div>
+                <div class="v" id="kAvg30">0분</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card span-2">
+          <div class="head"><strong>오늘 앱별 사용시간</strong>
+            <div class="row">
+              <select id="todayAppSelect"></select>
+              <button id="startTimer" class="primary">타이머 시작</button>
+              <button id="stopTimer" class="warn">타이머 정지·저장</button>
+              <span class="hint" id="timerHint">대기 중</span>
+            </div>
+          </div>
+          <div class="content">
+            <canvas id="barChart" width="900" height="280"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CALENDAR -->
+    <section id="page-calendar" class="page" style="display:none">
+      <div class="card">
+        <div class="head">
+          <strong>월간 캘린더</strong>
+          <div class="row">
+            <button class="ghost" id="prevMonth">◀︎</button>
+            <div id="calTitle" style="min-width:140px; text-align:center"></div>
+            <button class="ghost" id="nextMonth">▶︎</button>
+          </div>
+        </div>
+        <div class="content">
+          <div class="cal-head">
+            <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+          </div>
+          <div class="calendar" id="calendar"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- APPS -->
+    <section id="page-apps" class="page" style="display:none">
+      <div class="grid">
+        <div class="card">
+          <div class="head"><strong>앱별 기록 추가/수정</strong></div>
+          <div class="content">
+            <div class="row" style="margin-bottom:10px">
+              <input type="date" id="appsDate">
+              <input type="text" id="appName" placeholder="앱 이름 (예: YouTube)">
+              <input type="number" id="appMins" min="0" step="1" placeholder="분">
+              <button id="addAppUsage" class="primary">추가/덮어쓰기</button>
+              <button id="delAppUsage" class="danger">앱 삭제</button>
+            </div>
+            <table class="apps-table">
+              <thead><tr><th>앱</th><th>분</th><th>비율</th></tr></thead>
+              <tbody id="appsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="page-settings" class="page" style="display:none">
+      <div class="grid">
+        <div class="card">
+          <div class="head"><strong>데이터 관리</strong></div>
+          <div class="content">
+            <div class="row" style="margin-bottom:10px">
+              <button id="exportBtn" class="primary">내보내기(JSON)</button>
+              <input type="file" id="importFile" accept="application/json">
+              <button id="importBtn">가져오기</button>
+              <button id="resetBtn" class="danger">전체 초기화</button>
+            </div>
+            <div class="hint">모든 데이터는 이 기기의 브라우저(LocalStorage)에 저장돼. 다른 기기와 동기화되지 않아.</div>
+          </div>
+        </div>
+      </div>
+      <div class="footer">v1.0 — 최소 코드(바닐라 JS) · 외부 라이브러리 없음</div>
+    </section>
+  </main>
+
+  <script>
+    /******************** 데이터 모델 ********************/
+    const KEY = 'su_data_v1';
+    function todayKey(){ const d=new Date(); return d.toISOString().slice(0,10); }
+    function dateKey(d){ return new Date(d).toISOString().slice(0,10); }
+    function getData(){
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return { days:{}, createdAt: Date.now(), updatedAt: Date.now(), appsPreset:["YouTube","TikTok","Instagram","게임","메시지","브라우저"] };
+      try{ const o=JSON.parse(raw); if(!o.appsPreset) o.appsPreset=["YouTube","TikTok","Instagram","게임","메시지","브라우저"]; return o; }catch(e){ return { days:{}, createdAt: Date.now(), updatedAt: Date.now(), appsPreset:["YouTube","TikTok","Instagram","게임","메시지","브라우저"] }; }
+    }
+    function saveData(o){ o.updatedAt=Date.now(); localStorage.setItem(KEY, JSON.stringify(o)); }
+    function ensureDay(o, key){ if(!o.days[key]) o.days[key] = { totalMinutes:0, apps:{} }; return o.days[key]; }
+    function recalcDay(day){
+      let sum=0; for(const k in day.apps){ sum += Math.max(0, Number(day.apps[k])||0); }
+      day.totalMinutes = sum; return day.totalMinutes;
+    }
+
+    /******************** 유틸 ********************/
+    function fmtMin(m){ if(m<=0) return '0분'; const h=Math.floor(m/60); const mm=m%60; return h? `${h}시간 ${mm}분` : `${mm}분`; }
+    function daysBack(n, from=new Date()){
+      const out=[]; for(let i=n-1;i>=0;i--){ const d=new Date(from); d.setDate(d.getDate()-i); out.push(d); } return out;
+    }
+    function lastNDaysKeys(n){ return daysBack(n).map(d=>d.toISOString().slice(0,10)); }
+    function avgOf(arr){ if(!arr.length) return 0; return Math.round(arr.reduce((a,b)=>a+b,0)/arr.length); }
+
+    /******************** 차트(바닐라 Canvas) ********************/
+    function clearCanvas(ctx){ const c=ctx.canvas; ctx.clearRect(0,0,c.width,c.height); }
+    function drawAxes(ctx, padding){ const c=ctx.canvas; ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(padding, padding); ctx.lineTo(padding, c.height-padding); ctx.lineTo(c.width-padding, c.height-padding); ctx.stroke(); }
+    function drawLineChart(canvas, labels, values){
+      const ctx = canvas.getContext('2d'); clearCanvas(ctx);
+      const P = 30; const W=canvas.width, H=canvas.height;
+      const max = Math.max(60, ...values, 0); // 최소 스케일 60분
+      drawAxes(ctx, P);
+      // grid lines
+      ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1;
+      const lines=4; for(let i=1;i<=lines;i++){ const y = P + (H-2*P) * (i/lines); ctx.beginPath(); ctx.moveTo(P,y); ctx.lineTo(W-P,y); ctx.stroke(); }
+      // line
+      const step = (W-2*P) / Math.max(1, values.length-1);
+      ctx.beginPath();
+      for(let i=0;i<values.length;i++){
+        const x=P + i*step; const y = H-P - (values[i]/max)*(H-2*P);
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      const grad = ctx.createLinearGradient(0,0,W,0); grad.addColorStop(0,'#8ab4ff'); grad.addColorStop(1,'#7cf1c8');
+      ctx.strokeStyle=grad; ctx.lineWidth=3; ctx.stroke();
+      // markers
+      for(let i=0;i<values.length;i++){
+        const x=P + i*step; const y = H-P - (values[i]/max)*(H-2*P);
+        ctx.fillStyle='#0b1022'; ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      }
+      // x labels (sparse)
+      ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+      const stepLabel = Math.ceil(labels.length/7);
+      for(let i=0;i<labels.length;i+=stepLabel){ ctx.fillText(labels[i].slice(5).replace('-','/'), P + i*step, H-6); }
+      // y labels
+      ctx.textAlign='right';
+      for(let i=0;i<=lines;i++){ const v = Math.round(max * (i/lines)); const y = H-P - (v/max)*(H-2*P); ctx.fillText(v+'m', P-6, y+4); }
+    }
+
+    function drawBarChart(canvas, labels, values){
+      const ctx = canvas.getContext('2d'); clearCanvas(ctx);
+      const P=30, W=canvas.width, H=canvas.height; drawAxes(ctx, P);
+      const max = Math.max(60, ...values, 0);
+      const bw = (W-2*P) / Math.max(1, labels.length);
+      for(let i=0;i<labels.length;i++){
+        const v=values[i]; const x=P + i*bw + 6; const w=bw-12; const h=(v/max)*(H-2*P); const y=H-P-h;
+        const grad = ctx.createLinearGradient(0,0,0,H); grad.addColorStop(0,'#7cf1c8'); grad.addColorStop(1,'#8ab4ff');
+        ctx.fillStyle=grad; ctx.fillRect(x,y,w,h);
+        ctx.fillStyle='rgba(255,255,255,0.75)'; ctx.font='12px sans-serif'; ctx.textAlign='center';
+        ctx.fillText(v+'m', x+w/2, y-4);
+      }
+      // x labels
+      ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.textAlign='center'; ctx.font='12px sans-serif';
+      for(let i=0;i<labels.length;i++){
+        const x=P + i*bw + 6; const w=bw-12; ctx.save(); ctx.translate(x+w/2, H-10); ctx.rotate(-0.6); ctx.fillText(labels[i], 0, 0); ctx.restore();
+      }
+    }
+
+    /******************** 렌더러 ********************/
+    const tabs = document.querySelectorAll('.tab');
+    const pages = {
+      dash: document.getElementById('page-dash'),
+      calendar: document.getElementById('page-calendar'),
+      apps: document.getElementById('page-apps'),
+      settings: document.getElementById('page-settings'),
+    };
+    tabs.forEach(t=>t.addEventListener('click',()=>{
+      tabs.forEach(a=>a.classList.remove('active'));
+      t.classList.add('active');
+      Object.values(pages).forEach(p=>p.style.display='none');
+      pages[t.dataset.page].style.display='block';
+      if(t.dataset.page==='calendar') renderCalendar();
+      if(t.dataset.page==='dash') renderDash();
+      if(t.dataset.page==='apps') renderApps();
+    }));
+
+    // 요소 참조
+    const kToday = document.getElementById('kToday');
+    const kAvg7 = document.getElementById('kAvg7');
+    const kAvg30 = document.getElementById('kAvg30');
+    const lineChart = document.getElementById('lineChart');
+    const barChart = document.getElementById('barChart');
+    const todayAppSelect = document.getElementById('todayAppSelect');
+    const timerHint = document.getElementById('timerHint');
+    const startTimerBtn = document.getElementById('startTimer');
+    const stopTimerBtn = document.getElementById('stopTimer');
+
+    // 타이머 상태
+    let timerRunning=false; let timerStart=0; let timerApp='';
+
+    function renderDash(){
+      const data = getData();
+      // KPI
+      const tkey = todayKey(); const day = ensureDay(data, tkey); recalcDay(day);
+      kToday.textContent = fmtMin(day.totalMinutes);
+      const keys = Object.keys(data.days).sort();
+      const last30 = keys.slice(-30).map(k=>data.days[k].totalMinutes);
+      const last7 = keys.slice(-7).map(k=>data.days[k].totalMinutes);
+      kAvg7.textContent = fmtMin(avgOf(last7));
+      kAvg30.textContent = fmtMin(avgOf(last30));
+
+      // 라인 차트 (최근 14일, 빈 날은 0)
+      const last14Keys = lastNDaysKeys(14);
+      const labels = last14Keys;
+      const values = last14Keys.map(k=> (data.days[k]?.totalMinutes)||0);
+      drawLineChart(lineChart, labels, values);
+
+      // 오늘 앱별 바 차트
+      const apps = Object.entries(day.apps).sort((a,b)=>b[1]-a[1]);
+      const blabels = apps.map(([n])=>n); const bvals = apps.map(([,m])=>m);
+      drawBarChart(barChart, blabels, bvals);
+
+      // 앱 프리셋 셀렉트
+      todayAppSelect.innerHTML = '';
+      data.appsPreset.forEach(n=>{
+        const opt=document.createElement('option'); opt.value=n; opt.textContent=n; todayAppSelect.appendChild(opt);
+      });
+    }
+
+    // 타이머 동작
+    startTimerBtn.addEventListener('click', ()=>{
+      if(timerRunning) return;
+      timerApp = todayAppSelect.value || '기타';
+      timerRunning = true; timerStart = Date.now(); timerHint.textContent = `측정 중: ${timerApp}`;
+    });
+    stopTimerBtn.addEventListener('click', ()=>{
+      if(!timerRunning) return;
+      const mins = Math.max(1, Math.round((Date.now()-timerStart)/60000));
+      const data=getData(); const d=ensureDay(data, todayKey());
+      d.apps[timerApp] = (d.apps[timerApp]||0) + mins; recalcDay(d); saveData(data);
+      timerRunning=false; timerHint.textContent = `저장됨: ${timerApp} +${mins}분`;
+      renderDash(); renderApps(); renderCalendar();
+    });
+
+    // 캘린더
+    let calCursor = new Date();
+    const calTitle = document.getElementById('calTitle');
+    document.getElementById('prevMonth').onclick = ()=>{ calCursor.setMonth(calCursor.getMonth()-1); renderCalendar(); };
+    document.getElementById('nextMonth').onclick = ()=>{ calCursor.setMonth(calCursor.getMonth()+1); renderCalendar(); };
+
+    function renderCalendar(){
+      const data=getData();
+      const y=calCursor.getFullYear(); const m=calCursor.getMonth();
+      calTitle.textContent = `${y}년 ${m+1}월`;
+      const first = new Date(y,m,1); const startDay = first.getDay();
+      const lastDate = new Date(y, m+1, 0).getDate();
+      const grid = document.getElementById('calendar'); grid.innerHTML='';
+      // 앞 빈칸
+      for(let i=0;i<startDay;i++){ const d=document.createElement('div'); d.className='day none'; grid.appendChild(d); }
+      for(let d=1; d<=lastDate; d++){
+        const cell=document.createElement('div'); cell.className='day';
+        const key = dateKey(new Date(y,m,d)); const mins = data.days[key]?.totalMinutes || 0;
+        cell.innerHTML = `<div class="dno">${d}</div><div class="mins">${fmtMin(mins)}</div>`;
+        cell.onclick = ()=>{ // 빠른 추가/수정
+          const add = prompt(`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')} 총 사용 분(숫자) 입력\n(앱별은 '앱별 관리' 탭에서 설정)`, mins);
+          if(add===null) return;
+          const v = Math.max(0, Number(add)||0);
+          const data=getData(); const day=ensureDay(data, key); const cur = recalcDay(day);
+          const diff = v - cur; // 총합을 직접 맞추기 위해 '기타'에 반영
+          day.apps['기타'] = (day.apps['기타']||0) + diff; recalcDay(day); saveData(data);
+          renderCalendar(); renderDash();
+        };
+        grid.appendChild(cell);
+      }
+    }
+
+    // 앱별 관리
+    const appsDate = document.getElementById('appsDate');
+    const appName = document.getElementById('appName');
+    const appMins = document.getElementById('appMins');
+    const appsTableBody = document.getElementById('appsTableBody');
+    document.getElementById('addAppUsage').onclick = ()=>{
+      const key = appsDate.value ? dateKey(appsDate.value) : todayKey();
+      const name = (appName.value||'').trim()||'기타';
+      const mins = Math.max(0, Number(appMins.value)||0);
+      const data=getData(); const day=ensureDay(data, key);
+      day.apps[name]=mins; recalcDay(day); saveData(data);
+      if(!data.appsPreset.includes(name)) { data.appsPreset.push(name); saveData(data); }
+      appMins.value=''; renderApps(); renderDash(); renderCalendar();
+    };
+    document.getElementById('delAppUsage').onclick = ()=>{
+      const key = appsDate.value ? dateKey(appsDate.value) : todayKey();
+      const name = (appName.value||'').trim(); if(!name) return;
+      const data=getData(); const day=ensureDay(data, key); delete day.apps[name]; recalcDay(day); saveData(data);
+      renderApps(); renderDash(); renderCalendar();
+    };
+
+    function renderApps(){
+      const data=getData(); appsDate.value = todayKey();
+      const key = appsDate.value; const day=ensureDay(data, key);
+      const total = Math.max(1, recalcDay(day));
+      const rows = Object.entries(day.apps).sort((a,b)=>b[1]-a[1]).map(([n,m])=>{
+        const pct = Math.round(m*100/total);
+        return `<tr><td>${n}</td><td>${m}</td><td>${pct}%</td></tr>`;
+      }).join('');
+      appsTableBody.innerHTML = rows || '<tr><td colspan="3" class="muted">앱 기록이 없어</td></tr>';
+    }
+
+    // 설정: 내보내기/가져오기/초기화
+    document.getElementById('exportBtn').onclick = ()=>{
+      const blob = new Blob([JSON.stringify(getData(), null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download='usage_data.json'; a.click(); URL.revokeObjectURL(url);
+    };
+    document.getElementById('importBtn').onclick = ()=>{
+      const f = document.getElementById('importFile').files[0]; if(!f) return alert('JSON 파일을 선택해');
+      const reader = new FileReader(); reader.onload = ()=>{
+        try{ const o=JSON.parse(reader.result); if(!o.days) throw new Error('형식 오류'); localStorage.setItem(KEY, JSON.stringify(o)); alert('가져오기 완료'); location.reload(); }
+        catch(e){ alert('가져오기 실패: '+e.message); }
+      }; reader.readAsText(f);
+    };
+    document.getElementById('resetBtn').onclick = ()=>{
+      if(confirm('정말 모든 데이터를 삭제할까?')){ localStorage.removeItem(KEY); location.reload(); }
+    };
+
+    // 초기 렌더
+    renderDash(); renderCalendar(); renderApps();
+  </script>
+</body>
+</html>
